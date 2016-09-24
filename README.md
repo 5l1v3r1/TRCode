@@ -14,7 +14,7 @@ OSC      : 10.240 Mhz (4Mhz) <BR>
 COMM     : I2C <BR>
 
 
-Ogirinal code written in 2012.
+Original code written in 2012.
 
 Related documents can be found at :
 - https://github.com/barisdinc/UBAK-3U-SAT/blob/master/TAMSAT_UBAKUSATrev02_SSDD.docx
