@@ -8,7 +8,7 @@ Sensor1  : AD8317 <BR>
 Sensor2  : ADL5330 <BR>
 Sensor3  : TPS2421 (On/Off Control for 5V Bus) <BR>
 Sensor4  : ACS714 (Analog Current Reading) <BR>
-Sensor5  : LD29300 (On/Off Control for 3V6 Bus -Power Amplifier- <BR>
+Sensor5  : LD29300 (Regulator and On/Off Control for 3V6 Bus -Power Amplifier-) <BR>
 Watchdog : TPS3823/SBE805 <BR>
 OSC      : 10.240 Mhz (4Mhz) <BR>
 COMM     : I2C <BR>
