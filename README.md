@@ -1,17 +1,17 @@
 # TRCode
 Transponder Commander Code for TAMSAT Transponder (PIC18F24K22)
 
-This repository contains the Transponder code for TAMSAT Transponder.
-MCU      : PIC18F24K22
-PLL      : MB16F03L
-Sensor1  : AD8317
-Sensor2  : ADL5330
-Sensor3  : TPS2421
-Sensor4  : ACS714
-Sensor5  : LD29300
-Watchdog : TPS3823/SBE805
-OSC      : 10.240 Mhz (4Mhz)
-COMM     : I2C
+This repository contains the Transponder code for TAMSAT Transponder. <BR>
+MCU      : PIC18F24K22 <BR>
+PLL      : MB16F03L <BR>
+Sensor1  : AD8317 <BR>
+Sensor2  : ADL5330 <BR>
+Sensor3  : TPS2421 <BR>
+Sensor4  : ACS714 <BR>
+Sensor5  : LD29300 <BR>
+Watchdog : TPS3823/SBE805 <BR>
+OSC      : 10.240 Mhz (4Mhz) <BR>
+COMM     : I2C <BR>
 
 
 Ogirinal code written in 2012.
