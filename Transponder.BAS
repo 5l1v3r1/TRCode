@@ -1,7 +1,13 @@
+'TAMSAT Transponder Code 
+'Author : Baris DINC - 2012 
+'Device : 18F24K22
+'OSC    : 4 Mhz (will be replaced by 10.20 Mhz)
+
+
 'Device 18F24K20
 Device 18F24K22
 'Device 18F2550
-Xtal 4  '20 olacak
+Xtal 4  
 
 
 Config_Start
