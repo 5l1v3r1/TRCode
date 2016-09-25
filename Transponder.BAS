@@ -88,14 +88,6 @@ Symbol PEIE          = INTCON.6                   ' Peripheral Interrupt Enable 
 
 Dim TR_MD               As Byte
 Dim TRANSPONDER_MODE    As Byte
-Dim FREQ_IN             As Word                   ' Frequency of VCO ( MHz )
-Dim FREQ_OUT            As Word                   ' Frequency of VCO ( KHz )
-Dim FREQ_STEP           As Word                   ' Frequency of Step ( KHz )
-Dim REF_OSC             As Word                   ' Frequency of Referance ( KHz )
-Dim A_COUNTER           As Word                   ' Value of A
-Dim N_COUNTER           As Word                   ' Value of N
-Dim R_COUNTER           As Word                   ' Value of R
-Dim DIVISION_RATIO      As Word              
 Dim DATAOUT             As Dword
 Dim COUNT_VAR           As Byte
 Dim SEC_WAIT            As Byte
@@ -104,16 +96,35 @@ Dim PWM_VAL             As Byte
 Dim OUTPUT_POWER        As Word
 Dim MILI_SEC            As Word
 Dim SECONDS             As Byte
-Dim MINUTES             As Byte
-Dim HOURS               As Byte
-Dim DAYS                As Byte
-Dim WEEKS               As Byte
 Dim DAYCOUNT            As Byte
+Dim SECONDSCOUNT        As Dword
 Dim LASTDATA            As Byte
 Dim SLAVE_ADDRESS       As Byte                   ' Initialise I2C slave mode
 Dim I2C_DATA[10]        As Byte                   ' Array for I2C Values
 Dim I2C_DATACOUNT       As Byte                   ' Counter for I2C
-Dim STATE               As Byte                       
+Dim STATE               As Byte  
+Dim TR_ON_TIME          As Word                   ' Transponder On Time As Seconds
+Dim TR_OFF_TIME         As Word                   ' Transponder Off Time As Seconds  
+Dim TR_TIMER            As Word
+Dim IF_FREQ             As Dword                  ' Transponder IF Frequency (86.85 Mhz)
+Dim FREQ_INPUT          As Dword                  ' Transponder Input Frequency (145.960 Mhz)
+Dim FREQ_OUTPUT         As Dword                  ' Transponder Output Frequency (435.220 Mhz)
+Dim REF_OSC             As Dword                  ' Reference Oscilator Frequency (4 Mhz)
+Dim INPUT_FDIVIDER      As Byte                   ' Input Frequency Divider (M=16)
+Dim OUTPUT_FDIVIDER     As Byte                   ' Output Frequency Divider (M=64)
+Dim INPUT_FSTEP         As Word                   ' Input Frequency Step (10 Khz)
+Dim OUTPUT_FSTEP        As Word                   ' Output Frequency Step (25 Khz)
+Dim A1_COUNTER           As Word                  ' Value of A counter for PLL IF Frequency
+Dim A2_COUNTER           As Word                  ' Value of A counter for PLL RF Frequency
+Dim N1_COUNTER           As Word                  ' Value of N counter for PLL IF Frequency
+Dim N2_COUNTER           As Word                  ' Value of N counter for PLL RF Frequency
+Dim R1_COUNTER           As Word                  ' Value of R counter for PLL IF Frequency
+Dim R2_COUNTER           As Word                  ' Value of R counter for PLL RF Frequency
+Dim PLL_IF_DATA1         As Dword                 ' R Counter data for IF Frequency
+Dim PLL_IF_DATA2         As Dword                 ' A Counter, N Counter, Divider for IF Frequency
+Dim PLL_RF_DATA1         As Dword                 ' RCounter data for RF Frequency
+Dim PLL_RF_DATA2         As Dword                 ' A Counter, N Counter, Divider for RF Frequency
+
 SLAVE_ADDRESS = $14
 
 All_Digital   = true
@@ -174,7 +185,7 @@ Context Save
  GIE = 0  
  If TMR1_OVERFLOW = 1 And TMR1_ENABLE = 1 Then
      TMR1_ENABLE = 0
-     TIMER1 = TIMER1 + TMR1_VAL
+     TIMER1 = TIMER1 + TMR1_VAL                 ' TIMER1 is already set to 0 since overflowed from 65536
      TMR1_ENABLE = 1
      TMR1_OVERFLOW = 0
      MILI_SEC = MILI_SEC + TMR1_MS
@@ -182,23 +193,7 @@ Context Save
          'MILI_SEC = MILI_SEC - 1000
          MILI_SEC = 0
          SECONDS = SECONDS + 1
-         If SECONDS >= 60 Then 
-             SECONDS = 0
-             MINUTES = MINUTES + 1
-             If MINUTES >= 60 Then
-                MINUTES = 0
-                HOURS = HOURS + 1
-                If HOURS >= 24 Then
-                    HOURS = 0
-                    DAYS = DAYS + 1
-                    If DAYS >= 7 Then 
-                        DAYS = 0
-                        WEEKS = WEEKS + 1
-                        If WEEKS = 52 Then WEEKS = 0
-                    EndIf
-                EndIf
-             EndIf
-         EndIf
+         TR_TIMER = TR_TIMER + 1
      EndIf
  EndIf 
   
@@ -216,7 +211,7 @@ Context Save
         If BF = 1 Then                          ' data received, buffer is full
            LASTDATA = SSPBUF                    ' read data 
            I2C_DATA[I2C_DATACOUNT] = LASTDATA
-           GoSub ZamanSifirla                   ' ******** reset time counter on I2C Data Received
+           GoSub ResetCommTimer                 ' ******** reset time counter on I2C Data Received
            Inc I2C_DATACOUNT
            Select I2C_DATA[0]
                Case 0x15
@@ -254,8 +249,7 @@ Context Save
            If SSPOV = 1 Then SSPOV = 0
         EndIf
     EndIf
-' clear I2C collision and errors
- If R_W = 0 And SSPOV = 1 Then  SSPOV = 0 
+ If R_W = 0 And SSPOV = 1 Then  SSPOV = 0       ' clear I2C collision and errors
  CKP = 1
  If R_W = 1 And WCOL = 1 Then WCOL = 0
  EndIf
@@ -264,131 +258,101 @@ Context Restore
 '*** InterruptSection End
 
 '*** PreMain Begin
-PreMain:
-' reset time counters after every reset.
-SEC_WAIT = 15
-PWM_VAL= 5
-I2C_DATACOUNT = 0
-STATE = 0              
-TR_MD = TR_OFF                              ' set state on first open. If we are in the lab, first value must be ON because there isn't anybody to send i2c data
-TRANSPONDER_MODE = LAB                      ' !!! Change Before Launch !!! Parameters: LAB/SPACE
-HPWM 1,PWM_VAL,2000                         ' %5 duty cycle with 2Khz to AD9317 AGCset port for test (maximum gain)
-MINUTES = 0
-SECONDS = 0
-DAYCOUNT = 14                               ' If there isn't any data received along 14 days, we will open ourself
+PreMain:                                        ' reset time counters after every reset.
+SEC_WAIT                = 15
+PWM_VAL                 = 5
+I2C_DATACOUNT           = 0
+STATE                   = 0              
+TR_MD                   = TR_OFF                ' set state on first open. If we are in the lab, first value must be ON because there isn't anybody to send i2c data
+TR_TIMER                = 0
+TR_ON_TIME              = 3*60                  ' Transponder On duration
+TR_OFF_TIME             = 5*60                  ' Transponder Off duration
+IF_FREQ                 = 86850000              ' Transponder IF Frequency (86.85 Mhz)
+FREQ_INPUT              = 145960000             ' Transponder Input Frequency (145.960 Mhz)
+FREQ_OUTPUT             = 435225000             ' Transponder Output Frequency (435.220 Mhz)
+REF_OSC                 = 4000000               ' Reference Oscilator Frequency (4 Mhz)
+INPUT_FDIVIDER          = 16                    ' Input Frequency Divider (M=16)
+OUTPUT_FDIVIDER         = 64                    ' Output Frequency Divider (M=64)
+INPUT_FSTEP             = 10000                 ' Input Frequency Step (10 Khz)
+OUTPUT_FSTEP            = 25000                 ' Output Frequency Step (25 Khz)
 
-                                            ' Exit PLL from LOW-POWER mode   *** TODO: low power mode will be activated
-Low PLL_PSRF
+TRANSPONDER_MODE = LAB                          ' !!! Change Before Launch !!! Parameters: LAB/SPACE
+HPWM 1,PWM_VAL,2000                             ' %5 duty cycle with 2Khz to AD9317 AGCset port for test (maximum gain)
+SECONDS = 0
+DAYCOUNT = 14                                   ' If there isn't any data received along 14 days, we will open ourself
+SECONDSCOUNT = DAYCOUNT*86400                                         
+Low PLL_PSRF                                    ' Exit PLL from LOW-POWER mode   *** TODO: low power mode will be activated
 Low PLL_PSIF
 DelayMS 10
 Low PLL_LE
-High PLL_PSRF                                ' low power mode closed
-High PLL_PSIF                                ' low power mode closed
+High PLL_PSRF                                   ' low power mode closed
+High PLL_PSIF                                   ' low power mode closed
 
-                                            ' !!! Change Before Launch !!! If we are in the lab, give energy to transponder 
+                                                ' !!! Change Before Launch !!! If we are in the lab, give energy to transponder 
 'If TRANSPONDER_MODE = SA Then
 '    Low  TPS2421en
 '   'High LD29300EN
 'EndIf 
-GoSub Pll_Programla                         ' Load first values
 '*** PreMain End
 
 '*** Main Begin
 Main:
-If DAYS >= DAYCOUNT Then
-   If DAYS < 21 Then
-      TR_MD = TR_ON
-      If MINUTES  > 6 Then 
+If SECONDS >= SECONDSCOUNT Then
+    If TR_MD = TR_ON And TR_TIMER > TR_ON_TIME Then
         TR_MD = TR_OFF
-      Else If MINUTES > 12 Then
+        TR_TIMER = 0
+    EndIf
+    If TR_MD = TR_OFF And TR_TIMER > TR_OFF_TIME Then
         TR_MD = TR_ON
-      Else If MINUTES > 18 Then
-        TR_MD = TR_OFF
-      Else If MINUTES > 24 Then
-        TR_MD = TR_ON
-      Else If MINUTES > 30 Then
-        TR_MD = TR_OFF
-      Else If MINUTES > 36 Then
-        TR_MD = TR_ON
-      Else If MINUTES > 42 Then
-        TR_MD = TR_OFF
-      Else If MINUTES > 48 Then
-        TR_MD = TR_ON
-      Else If MINUTES > 54 Then
-        TR_MD = TR_OFF
-      EndIf
-   Else
-      TR_MD = TR_OFF
-      'PWRled = 0
-      DAYS = 12
-   EndIf
+        TR_TIMER = 0
+    EndIf
+Else
+    TR_TIMER = 0 
 EndIf
 
-Dim say As Byte
-
-For say = 1 To 2                            ' !!! Change Before Launch !!! Don't forget to set this 20. It makes noise.
-    If TR_MD = TR_ON Then                   ' Check energy of system.
+For COUNT_VAR = 1 To 2                          ' !!! Change Before Launch !!! Don't forget to set this 20. It makes noise.
+    If TR_MD = TR_ON Then                       ' Check energy of system.
         Low  TPS2421EN
         High LD29300EN
     Else
         High TPS2421EN
-        Low LD29300EN                       ' In this state PLL and the others also PIC if it is possible change state to no power mode.
+        Low LD29300EN                           ' In this state PLL and the others also PIC if it is possible change state to no power mode.
     EndIf                                            
-    TPS_CURRENT = ADIn 1                    ' We can generate working state error code using this current value.
+    TPS_CURRENT = ADIn 1                        ' We can generate working state error code using this current value.
     TPS_CURRENT = TPS_CURRENT >> 2
-    OUTPUT_POWER = ADIn 2                   ' Read output power from here
+    OUTPUT_POWER = ADIn 2                       ' Read output power from here
     OUTPUT_POWER = OUTPUT_POWER >> 2    
-    'If TPS_CURRENT > 2048 Then 
-    '    High PORTC.6 
-    'Else 
-    '    Low PORTC.6    
-    'EndIf
-
-    'if SEC_WAIT.0 = 1 then 
-     '   Toggle TPS3823WDI                  ' Inform WatchDog
-     '   'SEC_WAIT = 10
-            
-    'endif
-    'TPS3823WDI = MILI_SEC.7
-    DelayMS 250
-    Toggle TPS3823WDI
-    DelayMS 250
-    Toggle TPS3823WDI
-Next say
-    
-    GoSub Pll_Programla
+                                                ' TODO: A new command should be implemented to pass these current and power values to OBC via I2C
+    If MILI_SEC // 100 = 0 Then
+        Toggle TPS3823WDI
+    EndIf
+Next COUNT_VAR
+    GoSub Program_PLL
 GoTo Main
 '*** Main End
 
-'*** Pll_Programla Begin
-Pll_Programla:                              ' Get frequency from outside and put calculation part in to code
-                                            ' Parameters for If: OSC =4Mhz, Freq Range 230-235Mhz, M=16, ChSpacing=10Khz, FRQ=232.810Mhz (Ch 281) //Be carefull it must be 815
-                                            ' send IF reference clock value to PLL
-                      '12345678901234567890123
-    DATAOUT =  %000000000000000100110000010000
-    GoSub Pllgonder
-                                            ' send IF swallow counter values to PLL
-                      '12345678901234567890123
-    DATAOUT =  %000000001101100000011110101101
-    GoSub Pllgonder
-                                            ' Parameters for RF: OSC =4Mhz, Freq Range 348-349Mhz, M=64, ChSpacing=25Khz, FRQ=348.375Mhz (Ch 15) A:47 N:217  R:160  FC:1 LDS:0 Bit19:1
-                                            ' send RF reference clock value to PLL
-                      '12345678901234567890123
-    DATAOUT =  %000000010000000010100000010000
-    GoSub Pllgonder
-                                            ' send RF swallow counter values to PLL
-                      '12345678901234567890123
-    DATAOUT =  %000000011011111101010011011000
-    GoSub Pllgonder
+'*** Program_PLL Begin
+Program_PLL:                                    ' Get frequency from outside and put calculation part in to code
+    DATAOUT = PLL_IF_DATA1
+    GoSub SendToPLL
+
+    DATAOUT = PLL_IF_DATA2
+    GoSub SendToPLL
+
+    DATAOUT = PLL_RF_DATA1
+    GoSub SendToPLL
+
+    DATAOUT = PLL_RF_DATA2
+    GoSub SendToPLL
 
     Return
-'*** Pll_Programla End
+'*** Program_PLL End
 
-'*** Pllgonder Begin
-Pllgonder:                                  ' sends data from Data and CLK ports to PLL
-                                            ' In: data in the DataOut variable, Out: serial data from PLL_DATA, PLL_CLK
-                                            ' For IF/RF reference counter: CN1-CN2-T1-T2-R1-R2-R3-R4-R5-R6-R7-R8-R9-R10-R11-R12-R13-R14-CS--X-X-X-X
-                                            ' For IF/RF swallow counter: CN1-CN2-LDS-SW-FC-A1-A2-A3-A4-A5-A6-A7-N1-N2-N3-N4-N5-N6-N7-N8-N9-N10-N11
+'*** SendToPLL Begin
+SendToPLL:                                      ' sends data from Data and CLK ports to PLL
+                                                ' In: data in the DataOut variable, Out: serial data from PLL_DATA, PLL_CLK
+                                                ' For IF/RF reference counter: CN1-CN2-T1-T2-R1-R2-R3-R4-R5-R6-R7-R8-R9-R10-R11-R12-R13-R14-CS--X-X-X-X
+                                                ' For IF/RF swallow counter: CN1-CN2-LDS-SW-FC-A1-A2-A3-A4-A5-A6-A7-N1-N2-N3-N4-N5-N6-N7-N8-N9-N10-N11
     For COUNT_VAR = 1 To 23
         Low PLL_DATA
         If (DATAOUT & 1) = 1 Then High PLL_DATA
@@ -402,47 +366,42 @@ Pllgonder:                                  ' sends data from Data and CLK ports
 
     High PLL_LE
     DelayUS 10
-    Low PLL_LE                               ' set enable to 0
+    Low PLL_LE                                  ' set enable to 0
     DelayUS 10
 Return
-'*** Pllgonder End
+'*** SendToPLL End
 
-'*** ZamanSifirla Begin
-ZamanSifirla:
-    SECONDS = 0
-    MINUTES = 0
-    HOURS   = 0
-    DAYS    = 0
-    WEEKS  = 0
-    'TR_MD = TR_OFF                          ' For all possibilities we will close the transponder.
-    DAYCOUNT = 14                            ' If there isn't any data received along 14 days, we will open ourself. If I2C data received, count again for 14 days.
+'*** CalculatePLL Begin
+CalculatePLL:
+    Dim FVCO1 As Dword
+    Dim FVCO2 As Dword    
+    
+    FVCO1 = FREQ_INPUT + IF_FREQ                ' 145960000+86850000=232810000
+    FVCO1 = FVCO1/INPUT_FSTEP               
+    N1_COUNTER = FVCO1/INPUT_FDIVIDER
+    A1_COUNTER = FVCO1//INPUT_FDIVIDER    
+    R1_COUNTER = REF_OSC / INPUT_FSTEP          ' 4000000/10000=400    
+
+    FVCO2 = FREQ_OUTPUT - IF_FREQ               ' 435225000-86850000=348375000
+    FVCO2 = FVCO2/OUTPUT_FSTEP               
+    N2_COUNTER = FVCO2/OUTPUT_FDIVIDER
+    A2_COUNTER = FVCO2//OUTPUT_FDIVIDER    
+    R2_COUNTER = REF_OSC / OUTPUT_FSTEP         ' 4000000/10000=400   
+    
+    PLL_IF_DATA1 = 0
+    PLL_IF_DATA1 = PLL_IF_DATA1 | (R1_COUNTER << 5)
+    PLL_IF_DATA2 = 3 << 21
+    PLL_IF_DATA2 = PLL_IF_DATA2 | (A1_COUNTER << 11)
+    PLL_IF_DATA2 = PLL_IF_DATA2 | N1_COUNTER      
 Return
-'*** ZamanSifirla End
+'*** CalculatePLL End
 
-'I2C interruptini buraya yazacagim
-' I2C base address 14
-' acma komutu 0x15
-' kapama komutu 0x16
-'
- 
-' I2C adresi read write biti dahil olmadan 0x14 (7-bit).
-' I2C bus hizimiz 100kHz.
-' Biz size a\E7ma-kapama komutu g\F6nderdikten sonra sizden OK (0x0A) ya da ERROR (0xFF) bekleyecegiz.
+'*** ResetCommTimer Begin
+ResetCommTimer:
+    SECONDS = 0
+    'TR_MD = TR_OFF                             ' For all possibilities we will close the transponder.
+    DAYCOUNT = 14                               ' If there isn't any data received along 14 days, we will open ourself. If I2C data received, count again for 14 days.
+Return
+'*** ResetCommTimer End
 
-'\D6rnek Haberlesme:
-'OBC: I2C START
-'OBC: I2C Adresi (0x15) + Read-Write biti (WRITE)
-'TAMSAT: ACK
-'OBC: 0x15 (Transponder A\E7ma Komutu) veya 0x16 (Transponder Kapama Komutu)
-'TAMSAT: ACK
-'OBC: I2C STOP 
-'
-'100 milisaniye bekleme.
-'
-'OBC: I2C START
-'OBC: I2C Adresi (0x15) + Read-Write biti (READ)
-'TAMSAT: 0x0A (Eger Komut alinmissa), 0xFF (Eger  Komut alinmamissa)
-'OBC: I2C STOP
-'
-'
-'Biz komut g\F6ndermeden veri istedigimizde 0xFF d\F6nmesi lazim. 0x0A ve 0xFF sadece komut alindi mi emin olmak i\E7in.
+End
