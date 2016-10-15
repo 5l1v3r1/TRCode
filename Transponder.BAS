@@ -288,6 +288,8 @@ Low PLL_LE
 High PLL_PSRF                                   ' low power mode closed
 High PLL_PSIF                                   ' low power mode closed
 
+TRANSPONDER_MODE = LAB
+TR_MD = TR_ON  
                                                 ' !!! Change Before Launch !!! If we are in the lab, give energy to transponder 
 'If TRANSPONDER_MODE = SA Then
 '    Low  TPS2421en
@@ -333,34 +335,36 @@ GoTo Main
 
 '*** Program_PLL Begin
 Program_PLL:                                    ' Get frequency from outside and put calculation part in to code
+    
+    GoSub CalculatePLL
+    
     DATAOUT = PLL_IF_DATA1
     GoSub SendToPLL
 
-    DATAOUT = PLL_IF_DATA2
+    DATAOUT =  PLL_IF_DATA2
+    GoSub SendToPLL
+  
+    DATAOUT =  PLL_RF_DATA1 
+    GoSub SendToPLL
+                     
+    DATAOUT =  PLL_RF_DATA2 
     GoSub SendToPLL
 
-    DATAOUT = PLL_RF_DATA1
-    GoSub SendToPLL
-
-    DATAOUT = PLL_RF_DATA2
-    GoSub SendToPLL
-
-    Return
+    Return      
 '*** Program_PLL End
 
-'*** SendToPLL Begin
 SendToPLL:                                      ' sends data from Data and CLK ports to PLL
                                                 ' In: data in the DataOut variable, Out: serial data from PLL_DATA, PLL_CLK
                                                 ' For IF/RF reference counter: CN1-CN2-T1-T2-R1-R2-R3-R4-R5-R6-R7-R8-R9-R10-R11-R12-R13-R14-CS--X-X-X-X
                                                 ' For IF/RF swallow counter: CN1-CN2-LDS-SW-FC-A1-A2-A3-A4-A5-A6-A7-N1-N2-N3-N4-N5-N6-N7-N8-N9-N10-N11
-    For COUNT_VAR = 1 To 23
+    For COUNT_VAR = 1  To 23' Step -1
         Low PLL_DATA
-        If (DATAOUT & 1) = 1 Then High PLL_DATA
-        DATAOUT = DATAOUT >> 1
+        If (DATAOUT & %100000000000000000000000) <> 0 Then High PLL_DATA
+        DATAOUT = DATAOUT << 1
         DelayUS 10
         High PLL_CLK
         DelayUS 10
-        Low PLL_CLK
+        Low PLL_CLK                                                                                          
         DelayUS 10
     Next COUNT_VAR
 
@@ -382,17 +386,26 @@ CalculatePLL:
     A1_COUNTER = FVCO1//INPUT_FDIVIDER    
     R1_COUNTER = REF_OSC / INPUT_FSTEP          ' 4000000/10000=400    
 
+    PLL_IF_DATA1 = R1_COUNTER << 5 
+    PLL_IF_DATA1 = PLL_IF_DATA1 | %00           ' CN1,CN2 = %00
+
+    PLL_IF_DATA2 = %10110<<1                    ' FC=1 (VCO polarity)  SW=0 (Prescaler=32)  LDS=1 (Lock detect)  CN1,CN2=01(IF A,N counters)         
+    PLL_IF_DATA2 = PLL_IF_DATA2 | (A1_COUNTER << 6)
+    PLL_IF_DATA2 = PLL_IF_DATA2 | (N1_COUNTER << 13 ) 
+
     FVCO2 = FREQ_OUTPUT - IF_FREQ               ' 435225000-86850000=348375000
     FVCO2 = FVCO2/OUTPUT_FSTEP               
     N2_COUNTER = FVCO2/OUTPUT_FDIVIDER
     A2_COUNTER = FVCO2//OUTPUT_FDIVIDER    
     R2_COUNTER = REF_OSC / OUTPUT_FSTEP         ' 4000000/10000=400   
     
-    PLL_IF_DATA1 = 0
-    PLL_IF_DATA1 = PLL_IF_DATA1 | (R1_COUNTER << 5)
-    PLL_IF_DATA2 = 3 << 21
-    PLL_IF_DATA2 = PLL_IF_DATA2 | (A1_COUNTER << 11)
-    PLL_IF_DATA2 = PLL_IF_DATA2 | N1_COUNTER      
+    PLL_RF_DATA1 = R2_COUNTER << 5                                     
+    PLL_RF_DATA1 = PLL_RF_DATA1 | %10           ' CN1,CN2 = %10
+    
+    PLL_RF_DATA2 = %11011<<1                    ' FC=1 (VCO polarity)  SW=1 (Prescaler=64)  LDS=0 (Lock detect)  CN1,CN2=11(IF A,N counters)         
+    PLL_RF_DATA2 = PLL_RF_DATA2 | (A2_COUNTER << 6)
+    PLL_RF_DATA2 = PLL_RF_DATA2 | (N2_COUNTER << 13 )     
+         
 Return
 '*** CalculatePLL End
 
