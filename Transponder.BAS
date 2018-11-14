@@ -1,7 +1,7 @@
 'TAMSAT Transponder Code 
 'Author : Baris DINC - 2012, Burcu AYBAK - 2016 
 'Device : 18F24K22
-'OSC    : 4 Mhz (will be replaced by 10.20 Mhz)
+'OSC    : 4 Mhz (will be replaced by 10.240 Mhz)
 
 'Device 18F24K20
 Device 18F24K22
